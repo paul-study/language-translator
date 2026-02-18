@@ -1,0 +1,410 @@
+# Language Translator Feature — Technical Architecture Document
+
+**Project Name:** Language Translator  
+**Version:** 1.0 (Planning Phase)  
+**Date:** January 9, 2026  
+**Prepared For:** Partner Review
+
+---
+
+## 1. Executive Summary
+
+This document outlines the architecture and implementation plan for a JavaScript-based language translator feature. The feature supports two operational modes: **Single Device Mode** for live in-app translation and **Two-Device Chat Mode** for real-time translated conversations between users on separate devices. The system uses speech recognition for voice input, displays both original and translated text, and offers text-to-speech playback of translations.
+
+---
+
+## 2. Technologies & Languages Used
+
+### 2.1 Core Languages
+
+| Technology | Purpose |
+|------------|---------|
+| **HTML5** | Document structure and semantic markup |
+| **CSS3** | Styling, layout, responsive design |
+| **JavaScript (ES6+)** | Application logic, API integration, speech services |
+
+### 2.2 Web APIs
+
+| API | Purpose | Browser Support |
+|-----|---------|-----------------|
+| **Web Speech API (SpeechRecognition)** | Voice-to-text input | Chrome ✅, Edge ✅, Safari ✅, Firefox ❌ |
+| **SpeechSynthesis API** | Text-to-speech playback | All modern browsers ✅ |
+| **Fetch API** | HTTP requests to translation service | All modern browsers ✅ |
+| **WebSocket / Firebase** | Real-time two-device communication | All modern browsers ✅ |
+
+### 2.3 External Services
+
+| Service | Purpose | Cost |
+|---------|---------|------|
+| **MyMemory Translation API** | Text translation (12 languages) | Free (1000 words/day anonymous) |
+| **Firebase Realtime Database** (recommended) | Two-device sync | Free tier available |
+
+---
+
+## 3. Project Structure
+
+```
+language-translator/
+│
+├── index.html          # Main HTML document (UI structure)
+├── styles.css          # All styling and responsive design
+├── script.js           # Application logic and API integrations
+└── README.md           # Project documentation
+```
+
+### 3.1 File Responsibilities
+
+| File | Lines | Current State | Responsibility |
+|------|-------|---------------|----------------|
+| `index.html` | 68 | ✅ Complete (basic) | UI structure, language dropdowns, text areas, buttons |
+| `styles.css` | 152 | ✅ Complete | Visual design, layout, animations, responsive breakpoints |
+| `script.js` | 65 | ✅ Complete (basic) | Translation logic, swap functionality, API calls |
+| `README.md` | — | ✅ Complete | Documentation |
+
+---
+
+## 4. Architecture Overview
+
+### 4.1 High-Level System Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         USER INTERFACE LAYER                         │
+│  ┌─────────────────────────┐    ┌─────────────────────────────────┐ │
+│  │    SINGLE DEVICE MODE   │    │     TWO-DEVICE CHAT MODE        │ │
+│  │                         │    │                                 │ │
+│  │  [🎤 Mic] [🔊 Speaker]  │    │   Device A ←──────→ Device B    │ │
+│  │                         │    │      │                  │       │ │
+│  │  ┌───────────────────┐  │    │   [🎤][🔊]          [🎤][🔊]    │ │
+│  │  │   Input Text      │  │    │      │                  │       │ │
+│  │  │   (Original)      │  │    │   Message History (Chat Bubbles)│ │
+│  │  └───────────────────┘  │    │                                 │ │
+│  │  ┌───────────────────┐  │    │   Room Code / QR for Pairing    │ │
+│  │  │   Output Text     │  │    │                                 │ │
+│  │  │   (Translated)    │  │    └─────────────────────────────────┘ │
+│  │  └───────────────────┘  │                                        │
+│  └─────────────────────────┘                                        │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                          SERVICE LAYER                               │
+│                                                                      │
+│  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐   │
+│  │  Speech Service  │  │ Translation API  │  │    TTS Service   │   │
+│  │                  │  │                  │  │                  │   │
+│  │  SpeechRecognition│  │  MyMemory API   │  │ SpeechSynthesis  │   │
+│  │  - continuous    │  │  - 12 languages │  │  - Multi-voice   │   │
+│  │  - interim results│  │  - Free tier    │  │  - Rate control  │   │
+│  └──────────────────┘  └──────────────────┘  └──────────────────┘   │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                 REAL-TIME SYNC LAYER (Two-Device Only)               │
+│                                                                      │
+│   Firebase Realtime Database / WebSocket Server / PeerJS            │
+│                                                                      │
+│   - Room generation (unique codes)                                  │
+│   - Message broadcast                                               │
+│   - Connection state management                                     │
+│   - QR code generation for easy pairing                             │
+│                                                                      │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 Data Flow Diagram
+
+```
+SINGLE DEVICE MODE:
+┌──────────┐     ┌───────────────┐     ┌─────────────┐     ┌──────────┐
+│  User    │────▶│ Speech Recog. │────▶│  Translate  │────▶│  Display │
+│  Speaks  │     │ (Voice→Text)  │     │  (API Call) │     │  Result  │
+└──────────┘     └───────────────┘     └─────────────┘     └────┬─────┘
+                                                                │
+                                                                ▼
+                                                         ┌──────────┐
+                                                         │   TTS    │
+                                                         │ (Speak)  │
+                                                         └──────────┘
+
+TWO-DEVICE CHAT MODE:
+┌──────────┐     ┌───────────────┐     ┌─────────────┐     ┌──────────────┐
+│ Device A │────▶│ Speech Recog. │────▶│  Translate  │────▶│   Firebase   │
+│  Speaks  │     │ (Voice→Text)  │     │  (API Call) │     │   Database   │
+└──────────┘     └───────────────┘     └─────────────┘     └──────┬───────┘
+                                                                  │
+                       ┌──────────────────────────────────────────┘
+                       │ Real-time Sync
+                       ▼
+                 ┌──────────┐     ┌───────────────┐
+                 │ Device B │◀────│ Display + TTS │
+                 │ Receives │     │   (Both texts)│
+                 └──────────┘     └───────────────┘
+```
+
+---
+
+## 5. Current Implementation (What's Built)
+
+### 5.1 HTML Structure (index.html)
+
+**Current Features:**
+- Responsive container layout
+- Two language dropdown selectors (12 languages each)
+- Swap button (⇄) to switch source/target languages
+- Input textarea for source text
+- Output textarea for translated text (read-only)
+- Translate button
+
+**Supported Languages:**
+| Language | Code | Language | Code |
+|----------|------|----------|------|
+| English | en | Russian | ru |
+| Spanish | es | Chinese | zh |
+| French | fr | Japanese | ja |
+| German | de | Korean | ko |
+| Italian | it | Arabic | ar |
+| Portuguese | pt | Hindi | hi |
+
+### 5.2 Styling (styles.css)
+
+**Design System:**
+- **Primary Colors:** Purple gradient (`#667eea` to `#764ba2`)
+- **Background:** Gradient purple backdrop
+- **Card Style:** White container with 20px border radius, drop shadow
+- **Typography:** Segoe UI font family
+- **Responsive:** Mobile breakpoint at 600px (stacks elements vertically)
+
+**UI Components Styled:**
+- Language select dropdowns
+- Circular swap button (rotates 180° on hover)
+- Text areas with focus states
+- Gradient translate button with hover lift effect
+- Disabled state styling
+
+### 5.3 JavaScript Logic (script.js)
+
+**Current Features:**
+- DOM element references
+- Swap functionality (swaps languages AND text content)
+- Translation via MyMemory API (`https://api.mymemory.translated.net/get`)
+- Loading state during translation
+- Error handling with user-friendly messages
+- Keyboard shortcut: Ctrl+Enter to translate
+
+**API Integration Pattern:**
+```javascript
+// Current translation call structure
+const response = await fetch(
+    `https://api.mymemory.translated.net/get?q=${text}&langpair=${source}|${target}`
+);
+```
+
+---
+
+## 6. Planned Features (To Be Built)
+
+### 6.1 Phase 1: Speech Services (Single Device Enhancement)
+
+| Feature | Description | API Used |
+|---------|-------------|----------|
+| **Microphone Button** | Click to start voice input | SpeechRecognition |
+| **Live Transcription** | Show text as user speaks | `interimResults: true` |
+| **Speaker Button** | Play translated text aloud | SpeechSynthesis |
+| **Language Mapping** | Map 2-letter codes to BCP 47 (en → en-US) | Custom mapping |
+
+**Speech Recognition Configuration:**
+```javascript
+const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+recognition.continuous = true;       // Keep listening
+recognition.interimResults = true;   // Show partial results
+recognition.lang = 'en-US';          // Source language
+```
+
+**Text-to-Speech Configuration:**
+```javascript
+const utterance = new SpeechSynthesisUtterance(translatedText);
+utterance.lang = 'es-ES';   // Target language
+utterance.rate = 1;         // Normal speed
+speechSynthesis.speak(utterance);
+```
+
+### 6.2 Phase 2: Mode Selection UI
+
+| Component | Description |
+|-----------|-------------|
+| **Mode Toggle** | Radio buttons or tabs: "Single Device" / "Two-Device Chat" |
+| **Conditional UI** | Show/hide relevant interface based on mode |
+| **Chat History** | Scrollable message container for chat mode |
+| **Message Bubbles** | Styled bubbles showing original + translated text |
+
+### 6.3 Phase 3: Two-Device Real-Time Chat
+
+| Feature | Description |
+|---------|-------------|
+| **Room Generation** | Create unique 6-character room codes |
+| **Room Joining** | Enter code or scan QR to join |
+| **QR Code Display** | Generate QR code for easy mobile pairing |
+| **Message Sync** | Real-time message broadcast via Firebase |
+| **Connection Status** | Show connected/disconnected state |
+
+**Message Data Structure:**
+```javascript
+{
+    id: 'unique-message-id',
+    sender: 'device-a-id',
+    originalText: 'Hello, how are you?',
+    originalLang: 'en',
+    translatedText: '¿Hola, cómo estás?',
+    targetLang: 'es',
+    timestamp: 1704844800000
+}
+```
+
+**Recommended Sync Technology: Firebase Realtime Database**
+- No backend server required
+- Free tier: 1GB storage, 10GB/month transfer
+- Simple JavaScript SDK
+- Automatic offline support
+
+---
+
+## 7. Browser Compatibility
+
+### 7.1 Feature Support Matrix
+
+| Feature | Chrome | Edge | Firefox | Safari | iOS Safari | Android |
+|---------|--------|------|---------|--------|------------|---------|
+| Core Translation | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Speech Recognition | ✅ | ✅ | ❌ | ✅* | ✅* | ⚠️ |
+| Speech Synthesis | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Firebase Sync | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+
+*Safari requires `webkit` prefix  
+⚠️ Android Chrome doesn't support `continuous` mode
+
+### 7.2 Known Limitations
+
+1. **Firefox:** Speech Recognition is not supported. Users will see a warning and must use manual text input.
+2. **HTTPS Required:** Speech Recognition requires secure context (HTTPS) in production.
+3. **API Rate Limits:** MyMemory allows 1000 words/day for anonymous users.
+4. **Mobile Continuous Mode:** Android doesn't support continuous listening; will use push-to-talk instead.
+
+---
+
+## 8. UI Mockup (Planned Layout)
+
+```
+┌────────────────────────────────────────────────────────────────────┐
+│                    🌐 Language Translator                          │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   [ ◉ Single Device ]    [ ○ Two-Device Chat ]                     │
+│                                                                     │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   ┌─────────────┐    ⇄    ┌─────────────┐                          │
+│   │  English ▼  │         │  Spanish ▼  │                          │
+│   └─────────────┘         └─────────────┘                          │
+│                                                                     │
+│   ┌────────────────────────┐  ┌────────────────────────────────┐   │
+│   │                        │  │                                │   │
+│   │  Enter text or speak   │  │  Translation appears here     │   │
+│   │                        │  │                                │   │
+│   │                        │  │                                │   │
+│   │                   🎤   │  │                           🔊   │   │
+│   └────────────────────────┘  └────────────────────────────────┘   │
+│                                                                     │
+│                    [ 🔄 Translate ]                                 │
+│                                                                     │
+└────────────────────────────────────────────────────────────────────┘
+
+
+TWO-DEVICE CHAT MODE:
+┌────────────────────────────────────────────────────────────────────┐
+│   Room: ABC123    [📋 Copy]  [📱 QR Code]      🟢 Connected        │
+├────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│   ┌──────────────────────────────────────────┐                     │
+│   │  Partner (Spanish):                      │                     │
+│   │  "¿Cómo estás hoy?"                     │                     │
+│   │  → "How are you today?"                  │         🔊          │
+│   └──────────────────────────────────────────┘                     │
+│                                                                     │
+│                     ┌──────────────────────────────────────────┐   │
+│                     │  You (English):                          │   │
+│                     │  "I'm doing great, thanks!"              │   │
+│                     │  → "¡Estoy muy bien, gracias!"          │   │
+│                     └──────────────────────────────────────────┘   │
+│                                                                     │
+│   ┌────────────────────────────────────────────────────────────┐   │
+│   │  Speak or type your message...                      🎤     │   │
+│   └────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 9. Implementation Roadmap
+
+### Phase 1: Speech Enhancement (Week 1)
+- [ ] Add microphone button to input textarea
+- [ ] Implement SpeechRecognition with language mapping
+- [ ] Add speaker button to output textarea
+- [ ] Implement SpeechSynthesis playback
+- [ ] Add browser compatibility detection and warnings
+
+### Phase 2: Mode Selection (Week 2)
+- [ ] Create mode toggle UI (Single/Chat)
+- [ ] Build chat message history component
+- [ ] Style chat bubbles (original + translated text)
+- [ ] Add message timestamps
+
+### Phase 3: Two-Device Sync (Week 3)
+- [ ] Set up Firebase project
+- [ ] Implement room creation/joining logic
+- [ ] Add QR code generation for room sharing
+- [ ] Build real-time message sync
+- [ ] Handle connection/disconnection states
+
+### Phase 4: Polish & Testing (Week 4)
+- [ ] Cross-browser testing
+- [ ] Mobile responsiveness refinement
+- [ ] Error handling improvements
+- [ ] Performance optimization
+
+---
+
+## 10. Technical Decisions & Rationale
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| **Translation API** | MyMemory | Free, no API key, already implemented |
+| **Speech Recognition** | Web Speech API | Native browser support, no dependencies |
+| **Text-to-Speech** | SpeechSynthesis API | Universal browser support |
+| **Two-Device Sync** | Firebase Realtime DB | Serverless, free tier, simple SDK |
+| **Styling Approach** | Vanilla CSS | No build step, simple maintenance |
+| **No Framework** | Vanilla JS | Lightweight, portable, no dependencies |
+
+---
+
+## 11. Open Questions for Discussion
+
+1. **Firefox Fallback:** Should we require Chrome/Edge/Safari, or build a robust manual input fallback?
+
+2. **Translation Limits:** MyMemory has 1000 words/day limit. Should we add LibreTranslate as backup?
+
+3. **Offline Mode:** Should we cache recent translations for offline use?
+
+4. **Additional Languages:** Current: 12 languages. Should we expand the list?
+
+5. **Authentication:** For two-device mode, should rooms be password-protected?
+
+---
+
+**Document Version:** 1.0  
+**Last Updated:** January 9, 2026  
+**Status:** Planning Phase
